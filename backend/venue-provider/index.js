@@ -21,8 +21,9 @@ app.use('/api/public/webhook', require('./routes/webhookRoutes'));
 
 const { graphqlHTTP } = require('express-graphql');
 const venueSchema = require('./graphql/venueSchema');
+const authMiddleware = require('./middleware/authMiddleware');
 
-app.use('/graphql', graphqlHTTP({
+app.use('/graphql', authMiddleware, graphqlHTTP({
     schema: venueSchema,
     graphiql: true, // Enable GraphiQL UI
 }));
