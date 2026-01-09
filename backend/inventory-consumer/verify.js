@@ -25,24 +25,48 @@ const post = (path, data) => {
     });
 };
 
+const get = (path) => {
+    return new Promise((resolve, reject) => {
+        const options = {
+            hostname: 'localhost',
+            port: 4004,
+            path: path,
+            method: 'GET'
+        };
+
+        const req = http.request(options, (res) => {
+            let body = '';
+            res.on('data', (chunk) => body += chunk);
+            res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(body || '{}') }));
+        });
+
+        req.on('error', (e) => reject(e));
+        req.end();
+    });
+};
+
 const run = async () => {
     try {
         console.log('--- Testing Inventory Consumer ---');
 
-        // 1. Check Feasibility for Event 101 (Seminar Teknologi)
-        // Needs Capacity 50, Facilities: Projector, Sound System
-        console.log('\n1. Checking Feasibility for Event 101...');
+        // 1. Health Check
+        console.log('\n1. Checking Server Status...');
+        const health = await get('/');
+        console.log('Status:', health.body.message ? 'OK' : 'FAIL', health.body);
+
+        // 2. Check Feasibility for Event 101 (Seminar Teknologi)
+        console.log('\n2. Checking Feasibility for Event 101...');
         const check1 = await post('/api/check-event-feasibility', {
             eventId: '101'
         });
-        console.log('Event 101 Feasibility:', check1.body.feasibility ? 'OK (Feasible)' : 'FAIL/Not Feasible', check1.body);
+        console.log('Event 101 Feasibility:', check1.body.feasibility ? 'OK' : 'FAIL', check1.body);
 
-        // 2. Check Feasibility for Event 102 (Workshop Coding)
-        console.log('\n2. Checking Feasibility for Event 102...');
+        // 3. Check Feasibility for Event 102 (Workshop Coding)
+        console.log('\n3. Checking Feasibility for Event 102...');
         const check2 = await post('/api/check-event-feasibility', {
             eventId: '102'
         });
-        console.log('Event 102 Feasibility:', check2.body.feasibility ? 'OK (Feasible)' : 'FAIL/Not Feasible', check2.body);
+        console.log('Event 102 Feasibility:', check2.body.feasibility ? 'OK' : 'FAIL', check2.body);
 
     } catch (err) {
         console.error('Test Failed:', err);

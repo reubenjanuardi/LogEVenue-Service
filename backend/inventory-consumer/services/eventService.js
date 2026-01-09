@@ -1,34 +1,38 @@
-// This simulates fetching data from Group A's Event Service
-// In a real scenario, this would make an HTTP request to the actual A-Event Service URL
+const axios = require('axios');
+const dotenv = require('dotenv');
 
+dotenv.config();
+
+const TITIKTEMU_BASE_URL = process.env.TITIKTEMU_BASE_URL || 'http://localhost:3002/api/public';
+const TITIKTEMU_API_KEY = process.env.TITIKTEMU_API_KEY || 'your-shared-secret-key';
+
+/**
+ * Fetches event details from TitikTemu Public API
+ * Based on LOGE_INTEGRATION_GUIDE.md and TITIKTEMU_PUBLIC_API.md
+ */
 exports.getEventDetails = async (eventId) => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 100));
+    try {
+        console.log(`Connecting to TitikTemu Event Service for Event ID: ${eventId}...`);
 
-    // Mock Database of Events
-    const events = {
-        '101': {
-            id: '101',
-            title: 'Seminar Teknologi',
-            startTime: new Date(Date.now() + 86400000).toISOString(), // Tomorrow
-            endTime: new Date(Date.now() + 90000000).toISOString(),
-            requiredCapacity: 50,
-            requiredFacilities: ['Projector', 'Sound System'],
-            preferredVenueId: 1 // Optional preference
-        },
-        '102': {
-            id: '102',
-            title: 'Workshop Coding',
-            startTime: new Date(Date.now() + 172800000).toISOString(), // Day after tomorrow
-            endTime: new Date(Date.now() + 176400000).toISOString(),
-            requiredCapacity: 20,
-            requiredFacilities: ['WiFi'],
-            preferredVenueId: null
+        const response = await axios.get(`${TITIKTEMU_BASE_URL}/events/${eventId}`, {
+            headers: {
+                'X-LOGE-API-Key': TITIKTEMU_API_KEY
+            }
+        });
+
+        if (response.data && response.data.success) {
+            return response.data.data;
         }
-    };
 
-    if (events[eventId]) {
-        return events[eventId];
+        throw new Error(response.data.message || 'Failed to fetch event from TitikTemu');
+
+    } catch (error) {
+        console.error('TitikTemu API Error:', error.response?.data || error.message);
+
+        if (error.response?.status === 404) {
+            throw new Error('Event not found in TitikTemu system');
+        }
+
+        throw new Error(`TitikTemu Service unavailable: ${error.message}`);
     }
-    throw new Error('Event not found');
 };

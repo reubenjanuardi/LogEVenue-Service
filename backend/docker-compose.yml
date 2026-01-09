@@ -1,0 +1,117 @@
+version: '3.8'
+
+services:
+  mysql-db:
+    image: mysql:8.0
+    container_name: loge-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: loge_db
+    ports:
+      - "3309:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - loge-network
+
+  auth-service:
+    build: ./auth-service
+    container_name: auth-service
+    ports:
+      - "5001:4001"
+    environment:
+      - PORT=4001
+      - DB_HOST=mysql-db
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=root
+      - DB_NAME=auth_db
+      - JWT_SECRET=rahasia_negara_grup_b
+    depends_on:
+      - mysql-db
+    networks:
+      - loge-network
+
+  venue-provider:
+    build: ./venue-provider
+    container_name: venue-provider
+    ports:
+      - "5002:4002"
+    environment:
+      - PORT=4002
+      - DB_HOST=mysql-db
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=root
+      - DB_NAME=venue_db
+      - JWT_SECRET=rahasia_negara_grup_b
+      - TITIKTEMU_BASE_URL=https://c272d82cd7e1.ngrok-free.app/graphql
+    depends_on:
+      - mysql-db
+    networks:
+      - loge-network
+
+  logistics-service:
+    build: ./logistics-service
+    container_name: logistics-service
+    ports:
+      - "5003:4003"
+    environment:
+      - PORT=4003
+      - DB_HOST=mysql-db
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=root
+      - DB_NAME=logistics_db
+      - JWT_SECRET=rahasia_negara_grup_b
+    depends_on:
+      - mysql-db
+    networks:
+      - loge-network
+
+  inventory-consumer:
+    build: ./inventory-consumer
+    container_name: inventory-consumer
+    ports:
+      - "5004:4004"
+    environment:
+      - PORT=4004
+      - DB_HOST=mysql-db
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=root
+      - DB_NAME=inventory_consumer_db
+      - JWT_SECRET=rahasia_negara_grup_b
+      - TITIKTEMU_BASE_URL=https://c272d82cd7e1.ngrok-free.app/graphql
+      - VENUE_SERVICE_URL=http://venue-provider:4002/graphql
+      - LOGISTICS_SERVICE_URL=http://logistics-service:4003/graphql
+    depends_on:
+      - mysql-db
+    networks:
+      - loge-network
+
+  api-gateway:
+    build: ./api-gateway
+    container_name: api-gateway
+    ports:
+      - "5000:4000"
+    environment:
+      - PORT=4000
+      - VENUE_SERVICE_URL=http://venue-provider:4002/graphql
+      - LOGISTICS_SERVICE_URL=http://logistics-service:4003/graphql
+      - INVENTORY_SERVICE_URL=http://inventory-consumer:4004/graphql
+      - JWT_SECRET=rahasia_negara_grup_b
+    depends_on:
+      - venue-provider
+      - logistics-service
+      - inventory-consumer
+    networks:
+      - loge-network
+
+networks:
+  loge-network:
+    driver: bridge
+
+volumes:
+  mysql_data:

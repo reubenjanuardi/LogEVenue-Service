@@ -36,9 +36,9 @@ exports.login = async (req, res) => {
         if (!isMatch) return res.status(400).json({ message: "Password salah" });
 
         const token = jwt.sign(
-            { id: user.id, role: user.role }, 
-            process.env.JWT_SECRET, 
-            { expiresIn: '1d' } 
+            { id: user.id, role: user.role },
+            process.env.JWT_SECRET,
+            { expiresIn: '15m' }
         );
 
         res.json({

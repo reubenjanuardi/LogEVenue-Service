@@ -19,8 +19,9 @@ app.use('/api', require('./routes/apiRoutes'));
 
 const { graphqlHTTP } = require('express-graphql');
 const logisticsSchema = require('./graphql/logisticsSchema');
+const authMiddleware = require('./middleware/authMiddleware');
 
-app.use('/graphql', graphqlHTTP({
+app.use('/graphql', authMiddleware, graphqlHTTP({
     schema: logisticsSchema,
     graphiql: true,
 }));

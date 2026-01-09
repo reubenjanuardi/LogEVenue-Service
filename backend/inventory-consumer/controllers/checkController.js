@@ -1,71 +1,73 @@
 const axios = require('axios');
 const eventService = require('../services/eventService');
+const FeasibilityLog = require('../models/FeasibilityLog');
 
 // Service URLs (from env or default)
 const VENUE_SERVICE_URL = process.env.VENUE_SERVICE_URL || 'http://localhost:4002';
 const LOGISTICS_SERVICE_URL = process.env.LOGISTICS_SERVICE_URL || 'http://localhost:4003';
 
-exports.checkEventFeasibility = async (req, res) => {
-    try {
-        const { eventId } = req.body;
-        
-        // 1. Get Event Details (Mock Consumer)
-        console.log(`Fetching details for Event ${eventId}...`);
-        const event = await eventService.getEventDetails(eventId);
-        console.log('Event Details:', event);
+// Core Logic extracted for both REST and GraphQL
+exports.internalCheckFeasibility = async (eventId) => {
+    // 1. Get Event Details from TitikTemu
+    const event = await eventService.getEventDetails(eventId);
 
-        // 2. Check Venue Availability
-        // Logic: Find a room in the preferred venue (if any) or any venue that matches capacity
-        // For simplicity, let's assume we check the preferred venue's rooms matches
-        let venueStatus = { available: false, message: 'No suitable venue found' };
-        
-        // Fetch all venues (or verify specific if known) - simplified logic
-        // We will query Venue Service to check for rooms with enough capacity
-        // Since Venue Service doesn't have a "search by capacity" endpoint yet, we might list rooms or just assume specific room check if configured
-        // Let's assume we check room ID 1 for now or iterate
-        
-        // Better: We can add an endpoint in Venue Service to "find room by capacity", but I'll list rooms for the preferred venue
-        if (event.preferredVenueId) {
-            try {
-                const roomsRes = await axios.get(`${VENUE_SERVICE_URL}/api/venues/${event.preferredVenueId}/rooms`);
-                const rooms = roomsRes.data;
-                const suitableRoom = rooms.find(r => r.capacity >= event.requiredCapacity);
-                
-                if (suitableRoom) {
-                    // Check time availability
+    // 2. Check Venue Availability
+    // TitikTemu uses 'capacity' field
+    const requiredCapacity = event.capacity || 0;
+    const requiredFacilities = event.requiredFacilities || []; // Default to empty if not provided by TitikTemu
+
+    let venueStatus = { available: false, message: 'No suitable venue found', room: null };
+
+    if (event.venueId) {
+        try {
+            // Check specific room if provided by TitikTemu, otherwise search in venue
+            const roomsRes = await axios.get(`${VENUE_SERVICE_URL}/api/venues/${event.venueId}/rooms`);
+            const rooms = roomsRes.data;
+
+            let suitableRoom;
+            if (event.roomId) {
+                suitableRoom = rooms.find(r => r.id == event.roomId);
+            } else {
+                suitableRoom = rooms.find(r => r.capacity >= requiredCapacity);
+            }
+
+            if (suitableRoom) {
+                // Check if the capacity matches (secondary check)
+                if (suitableRoom.capacity < requiredCapacity) {
+                    venueStatus = { available: false, message: `Room ${suitableRoom.name} capacity (${suitableRoom.capacity}) is less than required (${requiredCapacity})` };
+                } else {
                     const availRes = await axios.post(`${VENUE_SERVICE_URL}/api/reservations/check-availability`, {
                         roomId: suitableRoom.id,
-                        startTime: event.startTime,
-                        endTime: event.endTime
+                        startTime: event.startDate || new Date().toISOString(), // Use TitikTemu field
+                        endTime: event.endDate || new Date(Date.now() + 3600000).toISOString() // Default to 1 hour if missing
                     });
-                    
+
                     if (availRes.data.available) {
-                        venueStatus = { available: true, room: suitableRoom, message: 'Venue Available' };
+                        venueStatus = { available: true, room: suitableRoom.name, message: 'Venue Available' };
                     } else {
-                        venueStatus = { available: false, message: `Room ${suitableRoom.name} is booked.` };
+                        venueStatus = { available: false, message: `Room ${suitableRoom.name} is already booked for this time.` };
                     }
-                } else {
-                    venueStatus = { available: false, message: `Venue ${event.preferredVenueId} has no room with capacity ${event.requiredCapacity}` };
                 }
-            } catch (err) {
-                console.error('Venue Service Error:', err.message);
-                venueStatus = { available: false, message: 'Venue Service Unavailable' };
+            } else {
+                venueStatus = { available: false, message: `Venue ${event.venueId} has no suitable room.` };
             }
+        } catch (err) {
+            console.error('Venue Service Error:', err.message);
+            venueStatus = { available: false, message: 'Venue Service Unavailable' };
         }
+    }
 
-        // 3. Check Logistics Status
-        // Logic: Check if required facilities (items) are in stock
-        // Map "Projector" string to an Item ID (Need a mapping or search)
-        // For this demo, let's assume "Projector" matches an item with name containing "Projector"
-        let logisticsStatus = { available: true, items: [] };
+    // 3. Check Logistics Status
+    let logisticsStatus = { available: true, items: [], message: 'Logistics Checked' };
 
+    if (requiredFacilities.length > 0) {
         try {
             const itemsRes = await axios.get(`${LOGISTICS_SERVICE_URL}/api/items`);
             const allItems = itemsRes.data;
 
-            for (const facility of event.requiredFacilities) {
+            for (const facility of requiredFacilities) {
                 const match = allItems.find(i => i.name.toLowerCase().includes(facility.toLowerCase()) || i.category.toLowerCase().includes(facility.toLowerCase()));
-                
+
                 if (match) {
                     if (match.availableStock > 0) {
                         logisticsStatus.items.push({ name: facility, status: 'Available', itemId: match.id });
@@ -74,7 +76,6 @@ exports.checkEventFeasibility = async (req, res) => {
                         logisticsStatus.items.push({ name: facility, status: 'Out of Stock' });
                     }
                 } else {
-                    // Item not tracked in logistics
                     logisticsStatus.items.push({ name: facility, status: 'Not Tracked/Unknown' });
                 }
             }
@@ -82,14 +83,43 @@ exports.checkEventFeasibility = async (req, res) => {
             console.error('Logistics Service Error:', err.message);
             logisticsStatus = { available: false, message: 'Logistics Service Unavailable' };
         }
+    } else {
+        logisticsStatus.message = 'No facilities required for this event.';
+    }
 
-        // 4. Return Report
-        res.json({
+    const feasibility = venueStatus.available && logisticsStatus.available;
+
+    // 4. Save to Database
+    try {
+        await FeasibilityLog.create({
             eventId: event.id,
-            feasibility: venueStatus.available && logisticsStatus.available,
-            venue: venueStatus,
-            logistics: logisticsStatus
+            eventTitle: event.title,
+            isFeasible: feasibility,
+            venueStatus: venueStatus,
+            logisticsStatus: logisticsStatus
         });
+        console.log(`✅ Feasibility log saved for Event ${eventId}`);
+    } catch (dbErr) {
+        console.error('Error saving feasibility log:', dbErr.message);
+    }
+
+    return {
+        eventId: event.id,
+        feasibility: feasibility,
+        venue: venueStatus,
+        logistics: logisticsStatus
+    };
+};
+
+exports.checkEventFeasibility = async (req, res) => {
+    try {
+        const { eventId } = req.body;
+        if (!eventId) {
+            return res.status(400).json({ error: 'eventId is required' });
+        }
+
+        const result = await exports.internalCheckFeasibility(eventId);
+        res.json(result);
 
     } catch (error) {
         res.status(500).json({ error: error.message });

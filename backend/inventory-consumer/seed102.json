@@ -1,0 +1,11 @@
+{
+    "id": "102",
+    "title": "Workshop Coding",
+    "date": "2026-01-09T10:00:00Z",
+    "startTime": "13:00",
+    "endTime": "15:00",
+    "capacity": 20,
+    "status": "PUBLISHED",
+    "venueId": "none",
+    "createdBy": "admin"
+}

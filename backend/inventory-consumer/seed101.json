@@ -1,0 +1,11 @@
+{
+    "id": "101",
+    "title": "Seminar Teknologi",
+    "date": "2026-01-08T10:00:00Z",
+    "startTime": "10:00",
+    "endTime": "12:00",
+    "capacity": 50,
+    "status": "PUBLISHED",
+    "venueId": "1",
+    "createdBy": "admin"
+}
